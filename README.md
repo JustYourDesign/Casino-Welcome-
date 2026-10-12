@@ -2,7 +2,7 @@
 
 Scrapes the welcome bonus for 3 online casinos from [AskGamblers](https://www.askgamblers.com/casino-bonuses/welcome). Google Gemini turns each bonus page's free text into structured fields. The results are written to `data/casinos.json`, and the script generates a mobile-friendly static page in `docs/index.html`.
 
-**Live page:** https://justyourdesign.github.io/Casino-Welcome-/
+**Live page:** https://justyourdesign.github.io/Casino-Welcome-/ (mirror on Vercel: https://casino-bonus-scraper-five.vercel.app)
 
 ## Requirements
 
