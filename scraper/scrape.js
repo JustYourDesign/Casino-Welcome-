@@ -4,6 +4,7 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { ApiError, GoogleGenAI } from "@google/genai";
+import { notify } from "./notify.js";
 import { isAllowed } from "./robots.js";
 
 const LISTING_URL = "https://www.askgamblers.com/casino-bonuses/welcome";
@@ -58,19 +59,24 @@ async function main() {
   if (links.length === 0) throw new Error("No bonus links found on the listing page; the layout may have changed.");
 
   const casinos = [];
+  const problems = []; // collected for the Telegram summary
   for (const url of links) {
     if (casinos.length === CASINO_COUNT) break;
     try {
       const text = pageText(await politeFetch(url));
       const extracted = await extractBonus(text);
       if (casinos.some((c) => c.casino.toLowerCase() === extracted.casino.toLowerCase())) continue;
-      for (const warning of sanityCheck(extracted, text)) console.warn(`  ! ${extracted.casino}: ${warning}`);
+      for (const warning of sanityCheck(extracted, text)) {
+        console.warn(`  ! ${extracted.casino}: ${warning}`);
+        problems.push(`${extracted.casino}: ${warning}`);
+      }
       casinos.push({ ...extracted, source_url: url });
       console.log(`  ✓ ${extracted.casino}: ${extracted.welcome_bonus} | ${extracted.wagering_multiplier}x | min ${extracted.min_deposit}`);
     } catch (err) {
       // A bad key, unknown model or exhausted quota fails for every page, so stop instead of crawling on.
       if (err instanceof ApiError && [400, 401, 403, 404, 429].includes(err.status)) throw err;
       console.warn(`  ✗ Skipped ${url}: ${err.message}`);
+      problems.push(`Skipped ${new URL(url).pathname.split("/").pop()}: ${err.message.slice(0, 120)}`);
     }
   }
   if (casinos.length < CASINO_COUNT) throw new Error(`Only extracted ${casinos.length}/${CASINO_COUNT} casinos.`);
@@ -79,6 +85,10 @@ async function main() {
   await mkdir(new URL("../data/", import.meta.url), { recursive: true });
   await writeFile(OUTPUT_FILE, JSON.stringify(output, null, 2) + "\n");
   console.log(`Wrote ${casinos.length} casinos to data/casinos.json`);
+
+  const lines = casinos.map((c) => `• ${c.casino}: ${c.welcome_bonus}, ${c.wagering_multiplier ?? "?"}x, min ${c.min_deposit ?? "?"}`);
+  const warnings = problems.length ? `\n\n⚠️ ${problems.length} warning(s):\n${problems.map((p) => `• ${p}`).join("\n")}` : "";
+  await notify(`${problems.length ? "⚠️" : "✅"} Casino scrape OK: ${casinos.length}/${CASINO_COUNT} casinos updated\n\n${lines.join("\n")}${warnings}`);
 }
 
 async function politeFetch(url) {
@@ -162,7 +172,9 @@ function sanityCheck(bonus, text) {
   return warnings;
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error(`Scrape failed: ${err.message}`);
+  // The JSON file is only written on success, so yesterday's data stays live.
+  await notify(`❌ Casino scrape FAILED. The site still shows the previous data.\n\nError: ${err.message.slice(0, 500)}`);
   process.exit(1);
 });

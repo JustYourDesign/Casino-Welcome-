@@ -4,7 +4,9 @@
   "description": "Scrapes casino welcome bonuses with an LLM extraction step and publishes them as a static page.",
   "scripts": {
     "scrape": "node --env-file-if-exists=.env scraper/scrape.js && node scraper/render.js",
-    "render": "node scraper/render.js"
+    "render": "node scraper/render.js",
+    "telegram:chat-id": "node --env-file-if-exists=.env scraper/notify.js --chat-id",
+    "telegram:test": "node --env-file-if-exists=.env scraper/notify.js"
   },
   "type": "module",
   "private": true,

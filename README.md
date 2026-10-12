@@ -54,13 +54,37 @@ npm run scrape
 scraper/scrape.js   fetch -> clean -> Gemini extraction -> data/casinos.json
 scraper/robots.js   small robots.txt parser (wildcards, longest-match rule)
 scraper/render.js   data/casinos.json -> docs/index.html
+scraper/notify.js   Telegram alerts (Bot API via fetch)
 data/casinos.json   latest scrape output
 docs/index.html     the published page (GitHub Pages serves /docs)
+.github/workflows/scrape.yml   daily scheduled run + publish + failure alerts
 ```
 
 ## Deploying
 
-In the GitHub repo, go to **Settings → Pages**, choose **Deploy from a branch**, then select `main` and `/docs`. After each scrape, commit `data/` and `docs/` and push.
+In the GitHub repo, go to **Settings → Pages**, choose **Deploy from a branch**, then select `main` and `/docs`. The scheduled workflow below commits fresh data every day, and Pages republishes it automatically.
+
+## Daily schedule (GitHub Actions)
+
+`.github/workflows/scrape.yml` runs the scraper every day at 02:00 UTC (04:00 SAST). To run it by hand, go to **Actions → Daily scrape → Run workflow**.
+
+1. Installs dependencies and runs `npm run scrape`.
+2. Commits the new `data/` and `docs/` only if the scrape succeeded. A failed run writes nothing, so the site keeps the previous day's data.
+3. Sends a Telegram message either way.
+
+The workflow needs these repository secrets (**Settings → Secrets and variables → Actions → New repository secret**): `GEMINI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
+
+## Telegram alerts
+
+After every run the bot sends either a summary (✅ all casinos updated, or ⚠️ with the warnings) or an error (❌, with the reason). On GitHub Actions, each message links to the run's log. Without a bot configured, the scraper skips the alerts and works as normal.
+
+Setup:
+
+1. In Telegram, message **@BotFather**, send `/newbot` and follow the prompts. Copy the token it gives you into `.env` as `TELEGRAM_BOT_TOKEN`.
+2. Open your new bot in Telegram and send it any message, e.g. "hi".
+3. Run `npm run telegram:chat-id`. It prints your chat ID; put it in `.env` as `TELEGRAM_CHAT_ID`.
+4. Run `npm run telegram:test`. You should get a test message.
+5. Add the same three values as GitHub repository secrets (see above).
 
 ## Limitations
 

@@ -1,0 +1,55 @@
+# Runs the scraper every day, publishes the new data, and alerts Telegram on any failure.
+name: Daily scrape
+
+on:
+  schedule:
+    - cron: "0 2 * * *" # 02:00 UTC = 04:00 SAST
+  workflow_dispatch: # "Run workflow" button for a manual run
+
+permissions:
+  contents: write # needed to commit the refreshed data
+
+concurrency:
+  group: daily-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Sends its own Telegram summary (success) or error (failure).
+      - name: Scrape and render
+        id: scrape
+        run: npm run scrape
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+      - name: Publish updated data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data docs
+          if git diff --cached --quiet; then
+            echo "No changes to publish."
+          else
+            git commit -m "Daily scrape $(date -u +%F)"
+            git push
+          fi
+
+      # Covers failures the scraper can't report itself (install errors, git push errors).
+      - name: Alert on other failures
+        if: failure() && steps.scrape.outcome != 'failure'
+        run: node scraper/notify.js "❌ Daily scrape workflow failed outside the scraper (install or publish step)."
