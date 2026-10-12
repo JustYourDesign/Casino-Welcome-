@@ -6,12 +6,12 @@
     "scrape": "node --env-file-if-exists=.env scraper/scrape.js && node scraper/render.js",
     "render": "node scraper/render.js"
   },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.133.0"
-  },
   "type": "module",
   "private": true,
   "engines": {
     "node": ">=22"
+  },
+  "dependencies": {
+    "@google/genai": "^2.28.0"
   }
 }

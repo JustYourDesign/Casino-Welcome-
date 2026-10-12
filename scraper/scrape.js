@@ -1,10 +1,9 @@
 // Scrapes welcome bonuses for 3 casinos from AskGamblers and writes data/casinos.json.
 // Pipeline: robots.txt check -> fetch listing -> fetch each bonus page -> clean text ->
-// Claude extracts the structured fields -> sanity checks -> JSON file.
+// Gemini extracts the structured fields -> sanity checks -> JSON file.
 
 import { mkdir, writeFile } from "node:fs/promises";
-import Anthropic from "@anthropic-ai/sdk";
-import { jsonSchemaOutputFormat } from "@anthropic-ai/sdk/helpers/json-schema";
+import { ApiError, GoogleGenAI } from "@google/genai";
 import { isAllowed } from "./robots.js";
 
 const LISTING_URL = "https://www.askgamblers.com/casino-bonuses/welcome";
@@ -13,7 +12,7 @@ const CASINO_COUNT = 3;
 const MAX_CANDIDATES = 10;
 const REQUEST_DELAY_MS = 1500;
 const USER_AGENT = "casino-bonus-scraper/1.0 (+screening task; polite, robots.txt-aware)";
-const MODEL = "claude-opus-5-5";
+const MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 const OUTPUT_FILE = new URL("../data/casinos.json", import.meta.url);
 
 const BONUS_SCHEMA = {
@@ -48,7 +47,7 @@ Only use facts stated in the text for the page's main offer (the first offer des
 "other bonuses" and "similar offers" lists. If a value is not stated, return null rather than guessing.
 If the page lists both a headline minimum deposit and a different "bonus only" minimum, use the headline one.`;
 
-const client = new Anthropic();
+const ai = new GoogleGenAI({}); // reads GEMINI_API_KEY from the environment
 
 async function main() {
   console.log(`Source: ${LISTING_URL}`);
@@ -69,8 +68,8 @@ async function main() {
       casinos.push({ ...extracted, source_url: url });
       console.log(`  ✓ ${extracted.casino}: ${extracted.welcome_bonus} | ${extracted.wagering_multiplier}x | min ${extracted.min_deposit}`);
     } catch (err) {
-      // Bad credentials or no credit will fail for every page, so stop instead of crawling on.
-      if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) throw err;
+      // A bad key, unknown model or exhausted quota fails for every page, so stop instead of crawling on.
+      if (err instanceof ApiError && [400, 401, 403, 404, 429].includes(err.status)) throw err;
       console.warn(`  ✗ Skipped ${url}: ${err.message}`);
     }
   }
@@ -104,7 +103,10 @@ function pageText(html) {
 }
 
 function decodeEntities(s) {
-  const named = { amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'", nbsp: " ", euro: "€", pound: "£", dollar: "$" };
+  const named = {
+    amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'", nbsp: " ", euro: "€", pound: "£", dollar: "$",
+    rsquo: "'", lsquo: "'", rdquo: "\"", ldquo: "\"", ndash: "-", mdash: "-", hellip: "...", bull: "•",
+  };
   return s
     .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
     .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
@@ -112,17 +114,36 @@ function decodeEntities(s) {
 }
 
 async function extractBonus(text) {
-  const response = await client.messages.parse({
-    model: MODEL,
-    max_tokens: 4000,
-    system: SYSTEM_PROMPT,
-    output_config: { effort: "low", format: jsonSchemaOutputFormat(BONUS_SCHEMA) },
-    messages: [{ role: "user", content: `Bonus page text:\n\n${text}` }],
-  });
-  if (response.stop_reason === "refusal") throw new Error("Model declined the request");
-  if (response.stop_reason === "max_tokens") throw new Error("Model output was truncated");
-  if (!response.parsed_output) throw new Error("Model returned no parseable output");
-  return response.parsed_output;
+  const response = await withRetry(() =>
+    ai.models.generateContent({
+      model: MODEL,
+      contents: `Bonus page text:\n\n${text}`,
+      config: {
+        systemInstruction: SYSTEM_PROMPT,
+        temperature: 0,
+        responseMimeType: "application/json",
+        responseJsonSchema: BONUS_SCHEMA,
+      },
+    }),
+  );
+  const finish = response.candidates?.[0]?.finishReason;
+  if (finish && finish !== "STOP") throw new Error(`Model stopped early (${finish})`);
+  if (!response.text) throw new Error("Model returned no output");
+  return JSON.parse(response.text);
+}
+
+// Retries transient server errors (e.g. 503 "high demand") with a growing delay.
+async function withRetry(fn, attempts = 4) {
+  for (let i = 1; ; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!(err instanceof ApiError && err.status >= 500) || i === attempts) throw err;
+      const delay = 5000 * i;
+      console.warn(`  … model busy (HTTP ${err.status}), retrying in ${delay / 1000}s`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
 }
 
 // Cheap checks against the raw text, so an LLM mistake shows up as a warning instead of silently shipping.

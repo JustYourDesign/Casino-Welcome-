@@ -1,0 +1,32 @@
+{
+  "source": "AskGamblers",
+  "listing_url": "https://www.askgamblers.com/casino-bonuses/welcome",
+  "scraped_at": "2026-10-12T06:20:56.137Z",
+  "model": "gemini-3.8-flash",
+  "casinos": [
+    {
+      "casino": "Jackpot City Casino",
+      "welcome_bonus": "100% up to 4000 ZAR",
+      "wagering_multiplier": 10,
+      "wagering_applies_to": "bonus",
+      "min_deposit": "50 ZAR",
+      "source_url": "https://www.askgamblers.com/casino-bonuses/latest/jackpot-city-casino-bonus-100percent-up-to-4000-zar-2026-02-18"
+    },
+    {
+      "casino": "YesPlay Casino",
+      "welcome_bonus": "100% up to 3000 ZAR",
+      "wagering_multiplier": 7,
+      "wagering_applies_to": "deposit+bonus",
+      "min_deposit": "20 ZAR",
+      "source_url": "https://www.askgamblers.com/casino-bonuses/latest/yesplay-casino-100percent-up-to-3000-2023-10-24"
+    },
+    {
+      "casino": "LunaLoots Casino",
+      "welcome_bonus": "350% up to 2000 EUR + 1000 free spins",
+      "wagering_multiplier": 30,
+      "wagering_applies_to": "deposit+bonus",
+      "min_deposit": "25 EUR",
+      "source_url": "https://www.askgamblers.com/casino-bonuses/latest/lunaloots-casino-bonus-350percent-up-to-2000-eur-1000-free-spins-2026-10-02"
+    }
+  ]
+}
